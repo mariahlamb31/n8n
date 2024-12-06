@@ -74,6 +74,16 @@ export const useUsersStore = defineStore(STORES.USERS, () => {
 
 	const globalRoleName = computed(() => currentUser.value?.role ?? 'default');
 
+	const isEasyAIWorkflowOnboardingDone = computed(() =>
+		Boolean(currentUser.value?.settings?.easyAIWorkflowOnboarded),
+	);
+
+	const setEasyAIWorkflowOnboardingDone = () => {
+		if (currentUser.value?.settings) {
+			currentUser.value.settings.easyAIWorkflowOnboarded = true;
+		}
+	};
+
 	const personalizedNodeTypes = computed(() => {
 		const user = currentUser.value;
 		if (!user) {
@@ -331,10 +341,8 @@ export const useUsersStore = defineStore(STORES.USERS, () => {
 		}
 	};
 
-	const disableMfa = async (mfaCode: string) => {
-		await mfaApi.disableMfa(rootStore.restApiContext, {
-			mfaCode,
-		});
+	const disableMfa = async (data: mfaApi.DisableMfaParams) => {
+		await mfaApi.disableMfa(rootStore.restApiContext, data);
 
 		if (currentUser.value) {
 			currentUser.value.mfaEnabled = false;
@@ -412,5 +420,7 @@ export const useUsersStore = defineStore(STORES.USERS, () => {
 		sendConfirmationEmail,
 		updateGlobalRole,
 		reset,
+		isEasyAIWorkflowOnboardingDone,
+		setEasyAIWorkflowOnboardingDone,
 	};
 });

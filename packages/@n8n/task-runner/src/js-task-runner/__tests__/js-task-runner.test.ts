@@ -1,5 +1,6 @@
+import { mock } from 'jest-mock-extended';
 import { DateTime } from 'luxon';
-import type { CodeExecutionMode, IDataObject } from 'n8n-workflow';
+import { setGlobalState, type CodeExecutionMode, type IDataObject } from 'n8n-workflow';
 import fs from 'node:fs';
 import { builtinModules } from 'node:module';
 
@@ -34,7 +35,8 @@ describe('JsTaskRunner', () => {
 				...defaultConfig.baseRunnerConfig,
 				grantToken: 'grantToken',
 				maxConcurrency: 1,
-				n8nUri: 'localhost',
+				taskBrokerUri: 'http://localhost',
+				taskTimeout: 60,
 				...baseRunnerOpts,
 			},
 			jsRunnerConfig: {
@@ -61,7 +63,7 @@ describe('JsTaskRunner', () => {
 		runner?: JsTaskRunner;
 	}) => {
 		jest.spyOn(runner, 'requestData').mockResolvedValue(taskData);
-		return await runner.executeTask(task);
+		return await runner.executeTask(task, mock<AbortSignal>());
 	};
 
 	afterEach(() => {
@@ -135,6 +137,36 @@ describe('JsTaskRunner', () => {
 				]);
 			},
 		);
+
+		it('should not throw when using unsupported console methods', async () => {
+			const task = newTaskWithSettings({
+				code: `
+					console.warn('test');
+					console.error('test');
+					console.info('test');
+					console.debug('test');
+					console.trace('test');
+					console.dir({});
+					console.time('test');
+					console.timeEnd('test');
+					console.timeLog('test');
+					console.assert(true);
+					console.clear();
+					console.group('test');
+					console.groupEnd();
+					console.table([]);
+					return {json: {}}
+				`,
+				nodeMode: 'runOnceForAllItems',
+			});
+
+			await expect(
+				execTaskWithParams({
+					task,
+					taskData: newDataRequestResponse([wrapIntoJson({})]),
+				}),
+			).resolves.toBeDefined();
+		});
 	});
 
 	describe('built-in methods and variables available in the context', () => {
@@ -213,6 +245,7 @@ describe('JsTaskRunner', () => {
 				['$runIndex', 0],
 				['{ wf: $workflow }', { wf: { active: true, id: '1', name: 'Test Workflow' } }],
 				['$vars', { var: 'value' }],
+				['$getWorkflowStaticData("global")', {}],
 			],
 			'Node.js internal functions': [
 				['typeof Function', 'function'],
@@ -311,10 +344,10 @@ describe('JsTaskRunner', () => {
 			});
 
 			it("should not expose task runner's env variables even if no env state is received", async () => {
-				process.env.N8N_RUNNERS_N8N_URI = 'http://127.0.0.1:5679';
+				process.env.N8N_RUNNERS_TASK_BROKER_URI = 'http://127.0.0.1:5679';
 				const outcome = await execTaskWithParams({
 					task: newTaskWithSettings({
-						code: 'return { val: $env.N8N_RUNNERS_N8N_URI }',
+						code: 'return { val: $env.N8N_RUNNERS_TASK_BROKER_URI }',
 						nodeMode: 'runOnceForAllItems',
 					}),
 					taskData: newDataRequestResponse(inputItems.map(wrapIntoJson), {
@@ -323,6 +356,43 @@ describe('JsTaskRunner', () => {
 				});
 
 				expect(outcome.result).toEqual([wrapIntoJson({ val: undefined })]);
+			});
+		});
+
+		describe('timezone', () => {
+			it('should use the specified timezone in the workflow', async () => {
+				const taskData = newDataRequestResponse(inputItems.map(wrapIntoJson), {});
+				taskData.workflow.settings = {
+					timezone: 'Europe/Helsinki',
+				};
+
+				const outcome = await execTaskWithParams({
+					task: newTaskWithSettings({
+						code: 'return { val: $now.toSeconds() }',
+						nodeMode: 'runOnceForAllItems',
+					}),
+					taskData,
+				});
+
+				const helsinkiTimeNow = DateTime.now().setZone('Europe/Helsinki').toSeconds();
+				expect(outcome.result[0].json.val).toBeCloseTo(helsinkiTimeNow, 1);
+			});
+
+			it('should use the default timezone', async () => {
+				setGlobalState({
+					defaultTimezone: 'Europe/Helsinki',
+				});
+
+				const outcome = await execTaskWithParams({
+					task: newTaskWithSettings({
+						code: 'return { val: $now.toSeconds() }',
+						nodeMode: 'runOnceForAllItems',
+					}),
+					taskData: newDataRequestResponse(inputItems.map(wrapIntoJson), {}),
+				});
+
+				const helsinkiTimeNow = DateTime.now().setZone('Europe/Helsinki').toSeconds();
+				expect(outcome.result[0].json.val).toBeCloseTo(helsinkiTimeNow, 1);
 			});
 		});
 

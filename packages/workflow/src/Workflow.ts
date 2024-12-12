@@ -157,6 +157,13 @@ export class Workflow {
 		this.expression = new Expression(this);
 	}
 
+	overrideStaticData(staticData?: IDataObject) {
+		this.staticData = ObservableObject.create(staticData || {}, undefined, {
+			ignoreEmptyOnFirstChild: true,
+		});
+		this.staticData.__dataChanged = true;
+	}
+
 	/**
 	 * The default connections are by source node. This function rewrites them by destination nodes
 	 * to easily find parent nodes.
@@ -194,7 +201,7 @@ export class Workflow {
 							returnConnection[connectionInfo.node][connectionInfo.type].push([]);
 						}
 
-						returnConnection[connectionInfo.node][connectionInfo.type][connectionInfo.index].push({
+						returnConnection[connectionInfo.node][connectionInfo.type][connectionInfo.index]?.push({
 							node: sourceNode,
 							type,
 							index: parseInt(inputIndex, 10),
@@ -551,18 +558,18 @@ export class Workflow {
 		let type: string;
 		let sourceIndex: string;
 		let connectionIndex: string;
-		let connectionData: IConnection;
+		let connectionData: IConnection | undefined;
 		for (sourceNode of Object.keys(this.connectionsBySourceNode)) {
 			for (type of Object.keys(this.connectionsBySourceNode[sourceNode])) {
 				for (sourceIndex of Object.keys(this.connectionsBySourceNode[sourceNode][type])) {
 					for (connectionIndex of Object.keys(
-						this.connectionsBySourceNode[sourceNode][type][parseInt(sourceIndex, 10)],
+						this.connectionsBySourceNode[sourceNode][type][parseInt(sourceIndex, 10)] || [],
 					)) {
 						connectionData =
-							this.connectionsBySourceNode[sourceNode][type][parseInt(sourceIndex, 10)][
+							this.connectionsBySourceNode[sourceNode][type][parseInt(sourceIndex, 10)]?.[
 								parseInt(connectionIndex, 10)
 							];
-						if (connectionData.node === currentName) {
+						if (connectionData?.node === currentName) {
 							connectionData.node = newName;
 						}
 					}
@@ -615,7 +622,7 @@ export class Workflow {
 		const returnNodes: string[] = [];
 		let addNodes: string[];
 
-		let connectionsByIndex: IConnection[];
+		let connectionsByIndex: IConnection[] | null;
 		for (
 			let connectionIndex = 0;
 			connectionIndex < this.connectionsByDestinationNode[nodeName][type].length;
@@ -627,7 +634,7 @@ export class Workflow {
 			}
 			connectionsByIndex = this.connectionsByDestinationNode[nodeName][type][connectionIndex];
 			// eslint-disable-next-line @typescript-eslint/no-loop-func
-			connectionsByIndex.forEach((connection) => {
+			connectionsByIndex?.forEach((connection) => {
 				if (checkedNodes.includes(connection.node)) {
 					// Node got checked already before
 					return;
@@ -742,7 +749,7 @@ export class Workflow {
 			checkedNodes.push(nodeName);
 
 			connections[nodeName][type].forEach((connectionsByIndex) => {
-				connectionsByIndex.forEach((connection) => {
+				connectionsByIndex?.forEach((connection) => {
 					if (checkedNodes.includes(connection.node)) {
 						// Node got checked already before
 						return;
@@ -839,7 +846,7 @@ export class Workflow {
 				}
 
 				connections[curr.name][type].forEach((connectionsByIndex) => {
-					connectionsByIndex.forEach((connection) => {
+					connectionsByIndex?.forEach((connection) => {
 						queue.push({
 							name: connection.node,
 							indicies: [connection.index],
@@ -943,6 +950,10 @@ export class Workflow {
 
 		let outputIndex: INodeConnection | undefined;
 		for (const connectionsByIndex of this.connectionsByDestinationNode[nodeName][type]) {
+			if (!connectionsByIndex) {
+				continue;
+			}
+
 			for (
 				let destinationIndex = 0;
 				destinationIndex < connectionsByIndex.length;
@@ -1353,8 +1364,8 @@ export class Workflow {
 		if (node.executeOnce === true) {
 			// If node should be executed only once so use only the first input item
 			const newInputData: ITaskDataConnections = {};
-			for (const inputName of Object.keys(inputData)) {
-				newInputData[inputName] = inputData[inputName].map((input) => {
+			for (const connectionType of Object.keys(inputData)) {
+				newInputData[connectionType] = inputData[connectionType].map((input) => {
 					// eslint-disable-next-line @typescript-eslint/prefer-optional-chain
 					return input && input.slice(0, 1);
 				});
